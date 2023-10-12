@@ -1,12 +1,34 @@
 import { useState } from 'react';
 import GenFetcher from './GenFetcher';
 import GenTable from './GenTable';
+import toast from 'react-hot-toast';
+import useSWR from 'swr';
 
-export default function MainJsonSource({config: {fetcher, columns}}){
+
+function Form({ columns, values, setValues }) {
+  return <tr>
+    {columns.map(({ title, setVal }, index) =>
+      <td key={title}>
+        {setVal
+          ? <input value={values[index]} onInput={evt => setValues(old => old.with(index, evt.target.value))} />
+          : '...'
+        }
+      </td>)}
+    <td>
+      <button data-id={''} data-action='ok'>🆗</button>
+      <button data-id={''} data-action='cancel'>✖️</button>
+    </td>
+  </tr>;
+}
+
+export default function MainJsonSource({config: {fetcher, columns, genObj, API_URL}}){
     const
-        [data, setData] = useState(null),
+        // [data, setData] = useState(null),
+        { data, error, isLoading, isValidating, mutate } = useSWR(API_URL, fetcher),
         [filterStr, setFilterStr] = useState(''),
         [sortByColumnN, setSortByColumnN] = useState(null),
+        [values, setValues] = useState(columns.map(() => '-')),
+        [editedId, setEditedId] = useState(null),
         filteredData = filterStr
             ? data?.filter(el => columns.map(({ getVal }) => getVal(el))
             .filter(x => 'string' === typeof x)
@@ -44,6 +66,20 @@ export default function MainJsonSource({config: {fetcher, columns}}){
                     setEditedId(null);
                     setValues(columns.map(() => '_'));
                     return;
+                  case 'ok':
+                    if (editedId) { // edit
+                      const index = data.findIndex(obj => editedId === String(obj.id)),
+                        newObj = data[index];
+                      columns.forEach(({ setVal }, i) => setVal && Object.assign(newObj, setVal(values[i])));
+                      setData(data.with(index, newObj));
+                    } else { // add
+                      const newObj = genObj();
+                      columns.forEach(({ setVal }, i) => setVal && Object.assign(newObj, setVal(values[i])));
+                      setData(data.concat(newObj));
+                    }
+                      setEditedId(null);
+                      setValues(columns.map(() => '_'));
+                      return;
                 }
             }
             const
@@ -54,11 +90,19 @@ export default function MainJsonSource({config: {fetcher, columns}}){
                     : 1 + th.cellIndex;
                 setSortByColumnN(newSortN);          
             }
+          }
 
-    return <div onClick={onClick}>
-        <input value={filterStr} onInput={evt => setFilterStr(evt.target.value)} />
-        <GenFetcher fetcher={fetcher} onLoadCallback={setData}>
-            <GenTable data={sortData} columns={columnsWithButtons} sortByColumnN={sortByColumnN}/>
-        </GenFetcher>
-    </div>
+          return <div onClick={onClick}>
+          <input value={filterStr} onInput={evt => setFilterStr(evt.target.value)} />
+          <div style={{ position: 'absolute', fontSize: 'xxx-large' }}>
+            {isLoading && <>⌛</>}
+            {isValidating && <>👁</>}
+          </div>
+          {error && <>Error {error.toString()}</>}
+          {data &&
+            <GenTable data={sortData} columns={columnsWithButtons} sortByColumnN={sortByColumnN} editedId={editedId}>
+              <Form columns={columns} values={values} setValues={setValues} />
+            </GenTable>}
+      
+        </div>;
 }
